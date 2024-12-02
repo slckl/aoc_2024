@@ -66,7 +66,7 @@ fn test_similarity_31() {
 }
 
 fn main() {
-    let (mut a, mut b) = read_input("input.txt");
+    let (mut a, mut b) = read_input("day1/input.txt");
     let distance = total_distance(&mut a, &mut b);
     println!("distance: {distance}");
     let similarity = similarity(&a, &b);
