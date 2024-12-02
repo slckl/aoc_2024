@@ -54,6 +54,42 @@ fn test_levels() {
     }
 }
 
+/// Part2.
+fn are_levels_safe_dampened(levels: &[u32]) -> bool {
+    // Level reports are not too long.
+    // In case of unsafety, just remove an element and try again.
+    if are_levels_safe(levels) {
+        return true;
+    }
+    // Levels are not safe out of the box, apply problem dampener.
+    // Try to remove 1 level at a time to see if the remaining levels are ok.
+    for idx in 0..levels.len() {
+        let mut dampened = levels.to_vec();
+        dampened.remove(idx);
+        if are_levels_safe(&dampened) {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+fn test_levels_dampened() {
+    let levels = vec![
+        (vec![7, 6, 4, 2, 1], true),
+        (vec![1, 2, 7, 8, 9], false),
+        (vec![9, 7, 6, 2, 1], false),
+        (vec![1, 3, 2, 4, 5], true),
+        (vec![8, 6, 4, 4, 1], true),
+        (vec![1, 3, 6, 7, 9], true),
+    ];
+
+    for (case, expected) in levels {
+        let safety = are_levels_safe_dampened(&case);
+        assert_eq!(safety, expected, "levels: {case:?}");
+    }
+}
+
 fn main() {
     let path = "day2/input.txt";
     let buf_read = BufReader::new(File::open(path).unwrap());
@@ -62,7 +98,12 @@ fn main() {
         let line = line.unwrap();
         // Parse line into levels report.
         let report: Vec<u32> = line.split_ascii_whitespace().map(|chunk| chunk.parse().unwrap()).collect();
-        if are_levels_safe(&report) {
+        // Part 1
+        // if are_levels_safe(&report) {
+        //     safe_levels += 1;
+        // }
+        // Part 2
+        if are_levels_safe_dampened(&report) {
             safe_levels += 1;
         }
     }
