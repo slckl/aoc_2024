@@ -4,14 +4,10 @@
 
 use nom::{
     branch::alt,
-    bytes::{
-        complete::{take_until, take_while},
-        tag, take,
-    },
-    character::complete::{anychar, char, digit1},
-    combinator::{cut, map, map_res, value},
+    bytes::{tag, take},
+    character::complete::{char, digit1},
+    combinator::{map, map_res, value},
     error::VerboseError,
-    multi::{many0, many_till},
     sequence::{delimited, preceded, separated_pair},
     IResult, Parser,
 };
@@ -30,20 +26,17 @@ fn test_num_tag() {
     assert_eq!(parse_num("-49").unwrap().1, -49);
 }
 
-/// A complete multiplication instruction, with `a` and `b` components.
 #[derive(Debug, Clone, PartialEq)]
-struct IMultiplication {
-    a: i32,
-    b: i32,
+pub enum Op {
+    /// Multiplication op
+    Mul(i32, i32),
+    /// Do op
+    Do,
+    /// Don't op
+    Dont,
 }
 
-impl IMultiplication {
-    fn new(a: i32, b: i32) -> Self {
-        Self { a, b }
-    }
-}
-
-fn parse_i_mul(i: &str) -> IResult<&str, IMultiplication, VerboseError<&str>> {
+fn parse_mul(i: &str) -> IResult<&str, Op, VerboseError<&str>> {
     // A valid multiplication instruction is "mul", "(", Number, ",", Number, ")"
     let parser = preceded(
         tag("mul"),
@@ -53,26 +46,41 @@ fn parse_i_mul(i: &str) -> IResult<&str, IMultiplication, VerboseError<&str>> {
             char(')'),
         ),
     );
-    map(parser, |(a, b)| IMultiplication { a, b }).parse(i)
+    map(parser, |(a, b)| Op::Mul(a, b)).parse(i)
 }
 
 #[test]
 fn test_mul() {
     let txt = r#"mul(2,3)"#;
-    let (rem, imul) = parse_i_mul(txt).unwrap();
+    let (rem, imul) = parse_mul(txt).unwrap();
     println!("{imul:?}");
     println!("rem: {rem}");
 }
 
+fn parse_do(i: &str) -> IResult<&str, Op, VerboseError<&str>> {
+    value(Op::Do, tag("do()")).parse(i)
+}
+
+fn parse_dont(i: &str) -> IResult<&str, Op, VerboseError<&str>> {
+    value(Op::Dont, tag("don't()")).parse(i)
+}
+
+#[test]
+fn test_do_dont() {
+    assert_eq!(parse_do("do()").unwrap().1, Op::Do);
+    assert_eq!(parse_dont("don't()").unwrap().1, Op::Dont);
+}
+
 /// Parses all the valid [IMultiplication] instructions in the input sequence `i`, discarding the rest.
-fn parse_mul_sequence(i: &str) -> IResult<&str, Vec<IMultiplication>, VerboseError<&str>> {
-    let mut muls = Vec::new();
+fn parse_op_sequence(i: &str) -> IResult<&str, Vec<Op>, VerboseError<&str>> {
+    let mut ops = Vec::new();
     let mut outer_rem = i;
+    let mut parse_op = alt((parse_mul, parse_do, parse_dont));
     // This could probably be written using nom, but I failed (see below for failure mode).
     while !outer_rem.is_empty() {
-        if let Ok((rem, mul)) = parse_i_mul(outer_rem) {
+        if let Ok((rem, op)) = parse_op.parse(outer_rem) {
             outer_rem = rem;
-            muls.push(mul);
+            ops.push(op);
         } else {
             // Snip off a character.
             let (rem, _) = take(1u8).parse(outer_rem)?;
@@ -86,32 +94,60 @@ fn parse_mul_sequence(i: &str) -> IResult<&str, Vec<IMultiplication>, VerboseErr
     // )))
     // .parse(i)?;
     // let (remainder, muls) = res;
-    Ok((outer_rem, muls))
+    Ok((outer_rem, ops))
 }
 
-fn sum_muls(muls: &[IMultiplication]) -> i32 {
-    muls.iter().map(|mul| mul.a * mul.b).sum()
+/// Sums all muls, obeying any do or don't instructions.
+fn sum_ops(ops: &[Op]) -> i32 {
+    let mut sum = 0;
+    let mut op_do = true;
+    for op in ops {
+        match op {
+            Op::Mul(a, b) => {
+                if op_do {
+                    sum += a * b;
+                }
+            }
+            Op::Do => op_do = true,
+            Op::Dont => op_do = false,
+        }
+    }
+    sum
 }
 
 #[test]
 fn test_parser() {
     let sequence = r#"xmul(2,4)%&mul[3,7]!@^do_not_mul(5,5)+mul(32,64]then(mul(11,8)mul(8,5))"#;
-    let (_, parsed_muls) = parse_mul_sequence(sequence).unwrap();
+    let (_, parsed_muls) = parse_op_sequence(sequence).unwrap();
     assert_eq!(
         parsed_muls,
+        [Op::Mul(2, 4), Op::Mul(5, 5), Op::Mul(11, 8), Op::Mul(8, 5)]
+    );
+    assert_eq!(sum_ops(&parsed_muls), 161);
+}
+
+#[test]
+fn test_parser_2() {
+    let sequence = r#"xmul(2,4)&mul[3,7]!^don't()_mul(5,5)+mul(32,64](mul(11,8)undo()?mul(8,5))"#;
+    let (_, parsed_ops) = parse_op_sequence(sequence).unwrap();
+    assert_eq!(
+        parsed_ops,
         [
-            IMultiplication::new(2, 4),
-            IMultiplication::new(5, 5),
-            IMultiplication::new(11, 8),
-            IMultiplication::new(8, 5)
+            Op::Mul(2, 4),
+            Op::Dont,
+            Op::Mul(5, 5),
+            Op::Mul(11, 8),
+            Op::Do,
+            Op::Mul(8, 5)
         ]
     );
-    assert_eq!(sum_muls(&parsed_muls), 161);
+    assert_eq!(sum_ops(&parsed_ops), 48);
 }
 
 fn main() {
     let input = std::fs::read_to_string("day3/input.txt").unwrap();
-    let (_, muls) = parse_mul_sequence(&input).unwrap();
-    let sum = sum_muls(&muls);
+    let (_, ops) = parse_op_sequence(&input).unwrap();
+    // For part 1 result, you have to remove all Op::Do, Op::Dont from the parsed `ops`.
+    let sum = sum_ops(&ops);
     println!("{sum}");
 }
