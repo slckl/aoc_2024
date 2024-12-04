@@ -95,9 +95,9 @@ fn xmas_loop(x: i32, y: i32, dx: i32, dy: i32, txt: &Text2D, count: &mut usize) 
     }
 }
 
-fn check(x: i32, y: i32, txt: &Text2D, count: &mut usize) {
-    // TODO
+fn check_xmas(x: i32, y: i32, txt: &Text2D, count: &mut usize) {
     let ch = txt.at(x, y).unwrap();
+    println!("({x}, {y}): {ch}");
     if ch != 'X' {
         return;
     }
@@ -120,21 +120,11 @@ fn check(x: i32, y: i32, txt: &Text2D, count: &mut usize) {
 }
 
 fn count_xmas(i: &str) -> usize {
-    println!("Humm");
     let text = Text2D::new(i);
     let mut count = 0;
-    println!("text.lines: {}", text.lines);
-    println!("text.line_len: {}", text.line_len);
     for y in 0..text.lines {
         for x in 0..text.line_len {
-            // TODO
-            let ch = text.at(x, y).unwrap();
-            println!("({x}, {y}): {ch}");
-            if ch != 'X' {
-                continue;
-            }
-            // Check all valid directions for next letter.
-            check(x, y, &text, &mut count);
+            check_xmas(x, y, &text, &mut count);
         }
     }
     count
@@ -145,7 +135,45 @@ fn test_count_xmas() {
     assert_eq!(count_xmas(TEST_CASE), 18);
 }
 
+fn check_x_mas(x: i32, y: i32, txt: &Text2D, count: &mut usize) {
+    let ch = txt.at(x, y).unwrap();
+    println!("({x}, {y}): {ch}");
+    if ch != 'A' {
+        return;
+    }
+    let top_left = txt.at(x - 1, y - 1);
+    let top_right = txt.at(x + 1, y - 1);
+    let bottom_left = txt.at(x - 1, y + 1);
+    let bottom_right = txt.at(x + 1, y + 1);
+    match (top_left, top_right, bottom_left, bottom_right) {
+        (Some('M'), Some('S'), Some('M'), Some('S')) => *count += 1,
+        (Some('S'), Some('M'), Some('S'), Some('M')) => *count += 1,
+        (Some('S'), Some('S'), Some('M'), Some('M')) => *count += 1,
+        (Some('M'), Some('M'), Some('S'), Some('S')) => *count += 1,
+        _ => ()
+    }
+}
+
+fn count_x_mas(i: &str) -> usize {
+    let text = Text2D::new(i);
+    let mut count = 0;
+    for y in 0..text.lines {
+        for x in 0..text.line_len {
+            check_x_mas(x, y, &text, &mut count);
+        }
+    }
+    count
+}
+
+#[test]
+fn test_count_x_mas() {
+    assert_eq!(count_x_mas(TEST_CASE), 9);
+}
+
 fn main() {
     let text = std::fs::read_to_string("day4/input.txt").unwrap();
-    println!("{}", count_xmas(&text));
+    // Part 1.
+    // println!("{}", count_xmas(&text));
+    // Part 2.
+    println!("{}", count_x_mas(&text));
 }
