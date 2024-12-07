@@ -35,12 +35,22 @@ impl Map {
         )
     }
 
+    fn idx(&self, x: i32, y: i32) -> usize {
+        (x + y * self.width) as usize
+    }
+
     pub fn at(&self, x: i32, y: i32) -> Option<bool> {
         if x >= 0 && x < self.width && y >= 0 && y < self.height {
-            Some(self.obstacles[(x + y * self.width) as usize])
+            Some(self.obstacles[self.idx(x, y)])
         } else {
             None
         }
+    }
+
+    pub fn flip_obstacle(&mut self, x: i32, y: i32) -> bool {
+        let idx = self.idx(x, y);
+        self.obstacles[idx] = !self.obstacles[idx];
+        self.obstacles[idx]
     }
 }
 
@@ -65,7 +75,7 @@ fn test_map_parse() {
     assert_eq!(guard_y, 6);
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Direction {
     Up,
     Down,
@@ -84,40 +94,65 @@ impl Direction {
     }
 }
 
-fn guard_walk(map: &Map, mut guard_pos: (i32, i32), mut dir: Direction) -> Vec<(i32, i32)> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct GuardPos {
+    x: i32,
+    y: i32,
+    dir: Direction,
+}
+
+impl GuardPos {
+    fn new(x: i32, y: i32, dir: Direction) -> Self {
+        Self {
+            x, y, dir
+        }
+    }
+}
+
+fn guard_walk(map: &Map, mut guard_pos: GuardPos) -> (Vec<GuardPos>, bool) {
     let mut path = vec![guard_pos];
-    loop {
-        let delta = match dir {
+    let mut loopy = false;
+    let mut obstacle_approaches = HashSet::new();
+    'walk: loop {
+        let delta = match guard_pos.dir {
             Direction::Up => (0, -1),
             Direction::Down => (0, 1),
             Direction::Right => (1, 0),
             Direction::Left => (-1, 0),
         };
-        guard_pos.0 += delta.0;
-        guard_pos.1 += delta.1;
+        guard_pos.x += delta.0;
+        guard_pos.y += delta.1;
 
-        if let Some(obstacle) = map.at(guard_pos.0, guard_pos.1) {
+        if let Some(obstacle) = map.at(guard_pos.x, guard_pos.y) {
             if obstacle {
+                // Check for loopiness.
+                if obstacle_approaches.contains(&guard_pos) {
+                    loopy = true;
+                    break 'walk;
+                } else {
+                    obstacle_approaches.insert(guard_pos);
+                }
                 // Obstacle, can't go there!
                 // Change dir, position remains old.
-                dir = dir.next();
-                guard_pos.0 -= delta.0;
-                guard_pos.1 -= delta.1;
+                guard_pos.dir = guard_pos.dir.next();
+                guard_pos.x -= delta.0;
+                guard_pos.y -= delta.1;
             }
         } else {
             // None means we out of bounds baby.
             break;
         }
         path.push(guard_pos);
+        
     }
-    path
+    (path, loopy)
 }
 
 fn p1(i: &str) -> usize {
     let (map, guard_x, guard_y) = Map::parse(i);
-    let positions = guard_walk(&map, (guard_x, guard_y), Direction::Up);
+    let (positions, _loopy) = guard_walk(&map, GuardPos::new(guard_x, guard_y, Direction::Up));
     // Filter distinct positions visited by the guard.
-    let distinct: HashSet<_> = positions.into_iter().collect();
+    let distinct: HashSet<_> = positions.into_iter().map(|gpos| (gpos.x, gpos.y)).collect();
     distinct.len()
 }
 
@@ -127,8 +162,42 @@ fn test_walk() {
     assert_eq!(distinct, 41);
 }
 
+fn p2(i: &str) -> Vec<(i32, i32)> {
+    let (mut map, guard_x, guard_y) = Map::parse(i);
+    let mut obstacle_positions = Vec::new();
+    let (positions, _loopy) = guard_walk(&map, GuardPos::new(guard_x, guard_y, Direction::Up));
+    // Analyze every position of the guard's path, whether it could use an obstacle to cause the guard go in a loop.
+    for candidate in &positions[1..] {
+        // Put an obstacle at the position, play guard walk from here, with a check for loop.
+        map.flip_obstacle(candidate.x, candidate.y);
+        
+        // Idx is idx -1 of positions[0..], so we can use it here.
+        // Rerun path from the start to see if we loop.
+        let (_new_positions, loopy) = guard_walk(&map, positions[0]);
+        if loopy {
+            obstacle_positions.push((candidate.x, candidate.y));
+        }
+        // Unflip so as not to affect other searches.
+        map.flip_obstacle(candidate.x, candidate.y);
+        // println!("Position ({}, {}) is {}", candidate.x, candidate.y, if loopy { "loopy" } else { "not loopy"} );
+    }
+
+    obstacle_positions
+}
+
+#[test]
+fn test_p2() {
+    let obstacle_positions = p2(MAP);
+    let distinct_obs_pos: HashSet<_> = obstacle_positions.into_iter().collect();
+    assert_eq!(distinct_obs_pos.len(), 6);
+}
+
 fn main() {
     // Part 1.
     let input = read_to_string("day6/input.txt").unwrap();
-    println!("{}", p1(&input));
+    println!("p1: {}", p1(&input));
+    // Part 2.
+    let obstacle_positions = p2(&input);
+    let distinct_obs_pos: HashSet<_> = obstacle_positions.into_iter().collect();
+    println!("p2: {}", distinct_obs_pos.len());
 }
