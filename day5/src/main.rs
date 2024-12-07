@@ -1,3 +1,5 @@
+use std::collections::{HashMap, VecDeque};
+
 #[derive(Debug, PartialEq)]
 struct Rule {
     before: u32,
@@ -171,10 +173,101 @@ fn test_sum() {
     assert_eq!(sum, 143);
 }
 
+impl Update {
+    /// Corrects this update to have correct page order
+    /// according to the given `rules`.
+    ///
+    /// Claude cooked this one, I had heard of these things
+    /// but didn't know you can apply them like this.
+    fn correct(&mut self, rules: &[Rule]) {
+        // Create adjacency list representation of the graph
+        let mut graph: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut in_degree: HashMap<usize, usize> = HashMap::new();
+
+        // Initialize in_degree for all pages
+        for idx in 0..self.pages.len() {
+            in_degree.entry(idx).or_insert(0);
+        }
+
+        // Build the graph from applicable rules
+        for (i, &page_i) in self.pages.iter().enumerate() {
+            for (j, &page_j) in self.pages.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+
+                // Check if there's a rule saying page_i must come before page_j
+                if rules
+                    .iter()
+                    .any(|r| r.before == page_i && r.after == page_j)
+                {
+                    graph.entry(i).or_default().push(j);
+                    *in_degree.entry(j).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // Perform topological sort using Kahn's algorithm
+        let mut sorted_indices = Vec::new();
+        let mut queue: VecDeque<usize> = in_degree
+            .iter()
+            .filter(|(_, &degree)| degree == 0)
+            .map(|(&node, _)| node)
+            .collect();
+
+        while let Some(node) = queue.pop_front() {
+            sorted_indices.push(node);
+
+            if let Some(neighbors) = graph.get(&node) {
+                for &next in neighbors {
+                    *in_degree.get_mut(&next).unwrap() -= 1;
+                    if in_degree[&next] == 0 {
+                        queue.push_back(next);
+                    }
+                }
+            }
+        }
+
+        // Create new pages array in correct order
+        let old_pages = self.pages.clone();
+        for (new_idx, &old_idx) in sorted_indices.iter().enumerate() {
+            self.pages[new_idx] = old_pages[old_idx];
+        }
+    }
+}
+
+#[test]
+fn test_correct() {
+    let (rules, mut updates) = parse(TEST_DOC);
+    updates[3].correct(&rules);
+    assert_eq!(updates[3].pages, vec![97, 75, 47, 61, 53]);
+}
+
+fn correct_and_sum_middle_pages_of_corrected_updates(i: &str) -> u32 {
+    let (rules, updates) = parse(i);
+    updates
+        .into_iter()
+        .filter(|update| !update.check(&rules))
+        .map(|mut update| {
+            update.correct(&rules);
+            let middle = update.pages.len() / 2;
+            update.pages[middle]
+        })
+        .sum()
+}
+
+#[test]
+fn test_correct_and_sum() {
+    let sum = correct_and_sum_middle_pages_of_corrected_updates(TEST_DOC);
+    assert_eq!(sum, 123);
+}
+
 fn main() {
     let input = std::fs::read_to_string("day5/input.txt").unwrap();
     // Part 1.
     let sum = check_and_sum_middle_pages(&input);
-    println!("{sum}");
-    
+    println!("p1: {sum}");
+    // Part 2.
+    let sum = correct_and_sum_middle_pages_of_corrected_updates(&input);
+    println!("p2: {sum}");
 }
