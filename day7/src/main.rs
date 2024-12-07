@@ -113,7 +113,7 @@ fn can_be_true(eq: &Equation, elements: &[Op]) -> bool {
     // Generate all permutations of operator chains using the 2 ops.
     // If at least one produces the value specified by the equation, return true.
     let op_len = eq.numbers.len() - 1;
-    let permutations = permutations(&elements, op_len);
+    let permutations = permutations(elements, op_len);
     for op_seq in permutations {
         if value(&eq.numbers, &op_seq) == eq.value {
             return true;
