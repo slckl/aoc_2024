@@ -1,10 +1,13 @@
-use std::{collections::{HashMap, HashSet}, fs::read_to_string};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::read_to_string,
+};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum Object {
     Empty,
     Antenna(char),
-    Antinode(char),
+    // Antinode(char),
 }
 
 #[derive(Debug, PartialEq)]
@@ -20,10 +23,10 @@ impl Map {
         let mut height = 0i32;
         let mut width = 0i32;
         let lines = i.lines();
-        for (y, line) in lines.enumerate() {
+        for line in lines {
             width = line.len() as i32;
             height += 1;
-            for (x, ch) in line.chars().enumerate() {
+            for ch in line.chars() {
                 let obj = match ch {
                     '.' => Object::Empty,
                     ch => Object::Antenna(ch),
@@ -117,7 +120,69 @@ fn comp_antinodes(map: &Map) -> Vec<(i32, i32)> {
 fn test_anodes() {
     let map = Map::parse(TEST_MAP);
     let a_nodes = comp_antinodes(&map);
-    println!("{a_nodes:?}");
+    let a_nodes: HashSet<_> = a_nodes.into_iter().collect();
+    assert_eq!(a_nodes.len(), 14);
+}
+
+fn comp_resonant_antinodes(map: &Map) -> Vec<(i32, i32)> {
+    let mut nodes = Vec::new();
+    let mut antennas: HashMap<char, Vec<(i32, i32)>> = HashMap::new();
+    for x in 0..map.width {
+        for y in 0..map.height {
+            let obj = map.at(x, y).unwrap();
+            if let Object::Antenna(ch) = obj {
+                antennas.entry(ch).or_default().push((x, y));
+            }
+        }
+    }
+    // For every antenna type, check every antenna against every other antenna.
+    for (_antenna_ty, positions) in antennas {
+        if positions.len() > 1 {
+            // Add extra antinodes for every antenna itself, because there's at least 2.
+            for pos in &positions {
+                nodes.push(*pos);
+            }
+        }
+        for (idx, pos_1) in positions.iter().enumerate() {
+            if idx + 1 == positions.len() {
+                continue;
+            }
+            for pos_2 in &positions[idx + 1..] {
+                // You can always draw a line between two points.
+                // But what kind of line?
+                let dx = pos_2.0 - pos_1.0;
+                let dy = pos_2.1 - pos_1.1;
+                // let ratio = dx as f32 / dy as f32;
+                // Antinode has the same distance to the closest antenna
+                // as the antennas have between themselves.
+                let mut anode_1 = (pos_2.0 + dx, pos_2.1 + dy);
+                while map.at(anode_1.0, anode_1.1).is_some() {
+                    nodes.push(anode_1);
+                    // Keep going.
+                    anode_1.0 += dx;
+                    anode_1.1 += dy;
+                }
+
+                let mut anode_2 = (pos_1.0 - dx, pos_1.1 - dy);
+                while map.at(anode_2.0, anode_2.1).is_some() {
+                    nodes.push(anode_2);
+                    // Keep going.
+                    anode_2.0 -= dx;
+                    anode_2.1 -= dy;
+                }
+            }
+        }
+    }
+
+    nodes
+}
+
+#[test]
+fn test_resonant_anodes() {
+    let map = Map::parse(TEST_MAP);
+    let a_nodes = comp_resonant_antinodes(&map);
+    let a_nodes: HashSet<_> = a_nodes.into_iter().collect();
+    assert_eq!(a_nodes.len(), 34);
 }
 
 fn main() {
@@ -125,4 +190,6 @@ fn main() {
     let map = Map::parse(&input);
     let a_nodes: HashSet<_> = comp_antinodes(&map).into_iter().collect();
     println!("p1: {}", a_nodes.len());
+    let a_nodes: HashSet<_> = comp_resonant_antinodes(&map).into_iter().collect();
+    println!("p2: {}", a_nodes.len());
 }
