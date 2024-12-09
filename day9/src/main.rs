@@ -1,41 +1,40 @@
 use std::fs::read_to_string;
 
-#[derive(Debug)]
-struct Memory {
-    files: Vec<u32>,
-    free_blocks: Vec<u32>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Block {
+    File { id: u32, size: u32 },
+    Free(u32),
 }
 
-fn parse(i: &str) -> Memory {
-    let mut files = Vec::new();
-    let mut free_blocks = Vec::new();
+fn parse(i: &str) -> Vec<Block> {
+    let mut blocks = Vec::new();
     let mut file = true;
+    let mut file_idx = 0;
     for ch in i.chars() {
         let num: u32 = ch.to_digit(10).unwrap();
         if file {
-            files.push(num);
+            blocks.push(Block::File {
+                size: num,
+                id: file_idx,
+            });
+            file_idx += 1;
         } else {
-            free_blocks.push(num);
+            blocks.push(Block::Free(num));
         }
         file = !file;
     }
-    // Last file may omit the free blocks repr.
-    if files.len() > free_blocks.len() {
-        free_blocks.push(0);
-    }
-    Memory { files, free_blocks }
+    blocks
 }
 
 #[test]
 fn test_parse() {
     let mem = parse("12345");
-    assert_eq!(mem.files.len(), 3);
-    assert_eq!(mem.files[0], 1);
-    assert_eq!(mem.free_blocks[0], 2);
-    assert_eq!(mem.files[1], 3);
-    assert_eq!(mem.free_blocks[1], 4);
-    assert_eq!(mem.files[2], 5);
-    assert_eq!(mem.free_blocks[2], 0);
+    assert_eq!(mem.len(), 5);
+    assert_eq!(mem[0], Block::File { id: 0, size: 1 });
+    assert_eq!(mem[1], Block::Free(2));
+    assert_eq!(mem[2], Block::File { id: 1, size: 3 });
+    assert_eq!(mem[3], Block::Free(4));
+    assert_eq!(mem[4], Block::File { id: 2, size: 5 });
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -44,14 +43,20 @@ enum ExpandedBlock {
     Free,
 }
 
-fn expand(mem: &Memory) -> Vec<ExpandedBlock> {
+fn expand(mem: &[Block]) -> Vec<ExpandedBlock> {
     let mut exp = Vec::new();
-    for file_id in 0..mem.files.len() {
-        for _file_blocks in 0..mem.files[file_id] {
-            exp.push(ExpandedBlock::File(file_id as u32));
-        }
-        for _free_blocks in 0..mem.free_blocks[file_id] {
-            exp.push(ExpandedBlock::Free);
+    for block in mem {
+        match block {
+            Block::File { id, size } => {
+                for _file_blocks in 0..*size {
+                    exp.push(ExpandedBlock::File(*id));
+                }
+            }
+            Block::Free(size) => {
+                for _free_blocks in 0..*size {
+                    exp.push(ExpandedBlock::Free);
+                }
+            }
         }
     }
 
@@ -125,11 +130,9 @@ fn test_compact() {
 
 fn checksum(exp: &[ExpandedBlock]) -> u64 {
     let mut sum = 0u64;
-    let mut file_idx = 0;
-    for block in exp {
+    for (block_idx, block) in exp.iter().enumerate() {
         if let ExpandedBlock::File(file_id) = block {
-            sum += (file_idx as u32 * file_id) as u64;
-            file_idx += 1;
+            sum += (block_idx as u32 * file_id) as u64;
         }
     }
     sum
@@ -144,10 +147,62 @@ fn test_checksum() {
     assert_eq!(checksum, 1928);
 }
 
+/// Moves whole files, instead of just blocks...
+fn compact_p2(mem: Vec<Block>) -> Vec<Block> {
+    // This nonsense is a bit easier, if we rev the whole thing.
+    let mut mem: Vec<_> = mem.into_iter().rev().collect();
+    // println!("{}", to_string(&expand(&mem).into_iter().rev().collect::<Vec<_>>()));
+    for idx in 0..mem.len() {
+        // println!("Fwd: {idx}: {:?}", mem[idx]);
+        let Block::File { id, size } = mem[idx] else {
+            continue;
+        };
+        // We got a file, yay. Try to shove it in the first place in the back.
+        for rev_idx in (idx..mem.len() - 1).rev() {
+            // println!("Rev: {rev_idx}: {:?}", mem[rev_idx]);
+            let Block::Free(free) = mem[rev_idx] else {
+                continue;
+            };
+            if free >= size {
+                // Yay, it fits here.
+                mem[rev_idx] = Block::File { id, size };
+                // mem.insert(rev_idx, Block::File { id, size });
+                mem[idx] = Block::Free(size);
+                let remaining_free = free - size;
+                mem.insert(rev_idx, Block::Free(remaining_free));
+                // println!("{}", to_string(&expand(&mem).into_iter().rev().collect::<Vec<_>>()));
+                break;
+            }
+        }
+    }
+    // Reverse memory back.
+    mem.into_iter().rev().collect()
+}
+
+#[test]
+fn test_compact_p2() {
+    let mem = parse("2333133121414131402");
+    assert_eq!(
+        to_string(&expand(&mem)),
+        "00...111...2...333.44.5555.6666.777.888899"
+    );
+    let mem = compact_p2(mem);
+    let mem = expand(&mem);
+    let printed = to_string(&mem);
+    assert_eq!(printed, "00992111777.44.333....5555.6666.....8888..");
+    let checksum = checksum(&mem);
+    assert_eq!(checksum, 2858);
+}
+
 fn main() {
     let input = read_to_string("day9/input.txt").unwrap();
     let mem = parse(&input);
     let mem = expand(&mem);
     let mem = compact(mem);
     println!("p1: {}", checksum(&mem));
+
+    let mem = parse(&input);
+    let mem = compact_p2(mem);
+    let mem = expand(&mem);
+    println!("p2: {}", checksum(&mem));
 }
