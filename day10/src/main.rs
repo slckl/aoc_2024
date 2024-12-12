@@ -109,7 +109,11 @@ fn eval_trailhead(map: &Map, pos: (i32, i32)) -> HashSet<Vec<(i32, i32)>> {
 #[test]
 fn test_eval() {
     let map = Map::parse(TEST_MAP);
-    assert_eq!(eval_trailhead(&map, (2, 0)), 5);
+    let paths: HashSet<_> = eval_trailhead(&map, (2, 0))
+        .into_iter()
+        .map(|path| path.last().cloned().unwrap())
+        .collect();
+    assert_eq!(paths.len(), 5);
 }
 
 fn eval_all_trailheads_p1(map: &Map) -> usize {
